@@ -1,0 +1,9 @@
+{
+    "domain": "tchoutchou",
+    "name": "Tchoutchou Integration",
+    "version": "1.0.0",
+    "codeowners": [],
+    "requirements": ["pyrail==0.1.0"],
+    "loggers": ["pyrail"],
+    "quality_scale": "legacy"
+}
