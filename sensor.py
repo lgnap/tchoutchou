@@ -206,14 +206,13 @@ class TchoutchouVehicleTrackSensor(SensorEntity):
                 return
 
             # get stops for the vehicle
-            for stop in vehicle_tracked["stops"]["stop"]:
-                station_name = stop["stationinfo"]["name"]
+            for stop in vehicle_tracked.stops:
+                station_name = stop.station
                 # Handle only stations_watch list
                 if station_name in self._stations_watch:
                     # format time
-                    epoch_time = int(stop["time"]) + int(stop["delay"])
-                    into_min = get_time_until(epoch_time)
-                    hhmm_time = time.strftime("%H:%M", time.localtime(epoch_time))
+                    into_min = get_time_until(stop.time.timestamp())
+                    hhmm_time = stop.time.strftime("%H:%M")
 
                     # update at_from on from station
                     if station_name == self._station_from:
@@ -235,8 +234,8 @@ class TchoutchouVehicleTrackSensor(SensorEntity):
 
                     # write into tracking item
                     self._tracking[station_name] = {
-                        "is_left": bool(int(stop["left"])),
-                        "is_arrived": bool(int(stop["arrived"])),
+                        "is_left": stop.left,
+                        "is_arrived": stop.arrived,
                         "at": hhmm_time,
                         "into": str(into_min) + " min",
                     }
@@ -289,18 +288,18 @@ class TchoutchouConnectionListTrainSensor(SensorEntity):
 
         train_attrs = {}
         for connection in self._connections:
-            hhmm_time = time.strftime(
-                "%H:%M", time.localtime(int(connection["departure"]["time"]))
+            hhmm_time = connection.departure.time.astimezone(DEFAULT_TZ).strftime(
+                "%H:%M"
             )
 
-            delay = get_delay_in_minutes(connection["departure"]["delay"])
+            delay = get_delay_in_minutes(connection.departure.delay)
 
             # uniform formatting for vehicle time (to get enough space into buttons)
             vehicle_time = (
                 f"{hhmm_time} ({delay:+02d})" if delay > 0 else f"  {hhmm_time}   "
             )
 
-            train_attrs[connection["departure"]["vehicle"]] = vehicle_time
+            train_attrs[connection.departure.vehicle] = vehicle_time
 
         return {
             "station_from": self._station_from,
@@ -324,20 +323,20 @@ class TchoutchouConnectionListTrainSensor(SensorEntity):
         LOGGER.debug("clock time asked: %s", time_ask_string)
 
         async with iRail(lang="fr") as api_client:
-            connections = await api_client.get_connections(
+            api_connections = await api_client.get_connections(
                 self._station_from, self._station_to, time=time_ask_string
             )
 
-            if connections == API_FAILURE:
+            if api_connections == API_FAILURE:
                 LOGGER.warning("API failed in TchoutchouSensor")
                 return
 
-            if not (connection := connections.get("connection")):
-                LOGGER.warning("API returned invalid connection: %r", connections)
+            if not (connections := api_connections.connections):
+                LOGGER.warning("API returned invalid connection: %r", api_connections)
                 return
 
             # LOGGER.debug("API returned connection: %r", connection)
 
-            self._connections = connection[0:6]
+            self._connections = connections[0:4]
 
-            self._state = connections["timestamp"]
+            self._state = api_connections.timestamp.timestamp()
