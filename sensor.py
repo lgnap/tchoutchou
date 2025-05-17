@@ -212,7 +212,7 @@ class TchoutchouVehicleTrackSensor(SensorEntity):
                 if station_name in self._stations_watch:
                     # format time
                     into_min = get_time_until(stop.time.timestamp())
-                    hhmm_time = stop.time.strftime("%H:%M")
+                    hhmm_time = stop.time.astimezone(DEFAULT_TZ).strftime("%H:%M")
 
                     # update at_from on from station
                     if station_name == self._station_from:
