@@ -23,8 +23,6 @@ import homeassistant.util.dt as dt_util
 
 LOGGER = logging.getLogger(__name__)
 
-API_FAILURE = -1
-
 CONNECTIONS_NAME = "Tchoutchou connections"
 TRACKING_NAME = "Tchoutchou tracking"
 
@@ -258,17 +256,25 @@ class TchoutchouConnectionListTrainSensor(SensorEntity):
     """Get the list of the next trains for a connection."""
 
     _attr_attribution = "https://api.irail.be/"
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_native_unit_of_measurement = None
 
-    def __init__(self, name, station_from, station_to, offset) -> None:
+    def __init__(
+        self, name: str, station_from: str, station_to: str, offset: int
+    ) -> None:
         """Initialize the Tchoutchou connection sensor."""
         self._name = name
+        self._available = False
         self._offset = offset
         self._station_from = station_from
         self._station_to = station_to
 
-        self._connections = []
+        self._vehicles = {}
         self._state = None
+
+    @property
+    def available(self):
+        """Available or not."""
+        return self._available
 
     @property
     def name(self):
@@ -283,28 +289,14 @@ class TchoutchouConnectionListTrainSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return sensor attributes if data is available."""
-        if self._state is None or not self._connections:
+        if self._state is None:
             return None
-
-        train_attrs = {}
-        for connection in self._connections:
-            hhmm_time = connection.departure.time.astimezone(DEFAULT_TZ).strftime(
-                "%H:%M"
-            )
-
-            delay = get_delay_in_minutes(connection.departure.delay)
-
-            # uniform formatting for vehicle time (to get enough space into buttons)
-            vehicle_time = (
-                f"{hhmm_time} ({delay:+02d})" if delay > 0 else f"  {hhmm_time}   "
-            )
-
-            train_attrs[connection.departure.vehicle] = vehicle_time
 
         return {
             "station_from": self._station_from,
             "station_to": self._station_to,
-            "vehicles": train_attrs,
+            "vehicles": self._vehicles,
+            "offset": self._offset,
         }
 
     @property
@@ -327,16 +319,39 @@ class TchoutchouConnectionListTrainSensor(SensorEntity):
                 self._station_from, self._station_to, time=time_ask_string
             )
 
-            if api_connections == API_FAILURE:
-                LOGGER.warning("API failed in TchoutchouSensor")
+            if api_connections is None:
+                self._available = False
+                self._state = None
+                LOGGER.warning("API connections failed in TchoutchouSensor")
                 return
 
             if not (connections := api_connections.connections):
+                self._available = False
+                self._state = None
                 LOGGER.warning("API returned invalid connection: %r", api_connections)
                 return
 
             # LOGGER.debug("API returned connection: %r", connection)
 
-            self._connections = connections[0:4]
+            self._vehicles = {}
+            next_hours = []
 
-            self._state = api_connections.timestamp.timestamp()
+            for connection in connections[0:4]:
+                hhmm_time = connection.departure.time.astimezone(DEFAULT_TZ).strftime(
+                    "%H:%M"
+                )
+
+                delay = get_delay_in_minutes(connection.departure.delay)
+
+                # uniform formatting for vehicle time (to get enough space into buttons)
+                vehicle_time = (
+                    f"{hhmm_time} ({delay:+02d})" if delay > 0 else f"  {hhmm_time}   "
+                )
+
+                next_hours.append(vehicle_time.strip())
+
+                self._vehicles[connection.departure.vehicle] = vehicle_time
+
+            self._state = ", ".join(next_hours)
+
+            self._available = True
